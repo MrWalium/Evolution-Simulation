@@ -4,9 +4,9 @@
 
 	Video: https://youtu.be/OqfHIujOvnE
 
-	Use Left mouse button to stimulate a cell, right mouse button to 
+	Use Left mouse button to stimulate a cell, right mouse button to
 	stimulate many cells, space bar to run simulation and middle mouse
-	to pan & zoom. 
+	to pan & zoom.
 
 	License (OLC-3)
 	~~~~~~~~~~~~~~~
@@ -62,14 +62,17 @@
 
 #define OLC_PGE_APPLICATION
 #include "olcPixelGameEngine.h"
+#include "olcPGEX_UI.h"
 
 #define OLC_PGEX_TRANSFORMEDVIEW
 #include "olcPGEX_TransformedView.h"
 
 #include <unordered_set>
+#include "wtypes.h"
 
-struct HASH_OLC_VI2D {
-	std::size_t operator()(const olc::vi2d& v) const
+struct HASH_OLC_VI2D
+{
+	std::size_t operator()(const olc::vi2d &v) const
 	{
 		return int64_t(v.y << sizeof(int32_t) | v.x);
 	}
@@ -78,9 +81,22 @@ struct HASH_OLC_VI2D {
 class SparseEncodedGOL : public olc::PixelGameEngine
 {
 public:
+	olc::UI_CONTAINER myUI;
+
 	SparseEncodedGOL()
 	{
 		sAppName = "Huge Game Of Life";
+		getDesktopResolution();
+	}
+
+	int getScreenWidth()
+	{
+		return screen_width;
+	}
+
+	int getScreenHeight()
+	{
+		return screen_height;
 	}
 
 protected:
@@ -90,21 +106,47 @@ protected:
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
 	olc::TransformedView tv;
 
+	int screen_width = 0;
+	int screen_height = 0;
+
 protected:
 	bool OnUserCreate() override
 	{
+		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width-40, 0, 40, 20, "EXIT");
+		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width-15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
 		tv.Initialise(GetScreenSize());
+		//myUI.ToggleDEBUGMODE();
 		return true;
 	}
 
-	int GetCellState(const olc::vi2d& in)
+	int GetCellState(const olc::vi2d &in)
 	{
 		return setActive.find(in) != setActive.end() ? 1 : 0;
 	}
 
 	bool OnUserUpdate(float fElapsedTime) override
 	{
-		tv.HandlePanAndZoom();
+		// tv.HandlePanAndZoom();
+
+		// this handles the uopdate of all items
+		myUI.Update(fElapsedTime);
+		// if any button in the current UI sends the command EXIT, letsd exit
+		if (myUI.hasCommand("EXIT", false)) return 0;
+		if (myUI.getbtnPressed() == 1) {
+			myUI.setW(1, 50);
+			myUI.setX(1, screen_width-50);
+			myUI.setText(1, ">");
+			myUI.setText(1, ">");
+		}
+		// This draws all items in the UI
+		myUI.drawUIObjects();
+		// lets print a string to the screen telling if the mouse is in any UI.
+		if (myUI.isMouseInUI()) DrawString(50, screen_height* 0.9, ":THE MOUSE IS IN THE UI", olc::RED);
+		else DrawString(50, screen_height* 0.9, ":THE MOUSE NOT IN THE UI", olc::RED);
+		// lets also draw all current commands to the screen
+		std::string myOut = myUI.getAllCmds();
+		DrawString(50, screen_height* 0.95, myOut);
+		DrawString(50, screen_height* 0.8, "A text field, try using it:", olc::RED);
 
 		if (GetKey(olc::Key::SPACE).bHeld)
 		{
@@ -113,13 +155,12 @@ protected:
 			setActiveNext.clear();
 			setActiveNext.reserve(setActive.size());
 
-
 			setPotential = setPotentialNext;
 
 			// We know all active cells this epoch have potential to stimulate next epoch
 			setPotentialNext = setActive;
 
-			for (const auto& c : setPotential)
+			for (const auto &c : setPotential)
 			{
 				// Cell has changed, apply rules
 
@@ -134,7 +175,6 @@ protected:
 					GetCellState(olc::vi2d(c.x + 0, c.y + 1)) +
 					GetCellState(olc::vi2d(c.x + 1, c.y + 1));
 
-
 				if (GetCellState(c) == 1)
 				{
 					// if cell is alive and has 2 or 3 neighbours, cell lives on
@@ -142,9 +182,9 @@ protected:
 
 					if (s == 0)
 					{
-						// Kill cell through activity omission		
+						// Kill cell through activity omission
 
-						// Neighbours are stimulated for computation next epoch												
+						// Neighbours are stimulated for computation next epoch
 						for (int y = -1; y <= 1; y++)
 							for (int x = -1; x <= 1; x++)
 								setPotentialNext.insert(c + olc::vi2d(x, y));
@@ -154,8 +194,6 @@ protected:
 						// No Change - Keep cell alive
 						setActiveNext.insert(c);
 					}
-
-
 				}
 				else
 				{
@@ -165,20 +203,19 @@ protected:
 						// Spawn cell
 						setActiveNext.insert(c);
 
-						// Neighbours are stimulated for computation next epoch												
+						// Neighbours are stimulated for computation next epoch
 						for (int y = -1; y <= 1; y++)
 							for (int x = -1; x <= 1; x++)
 								setPotentialNext.insert(c + olc::vi2d(x, y));
 					}
 					else
 					{
-						// No Change - Keep cell dead						
+						// No Change - Keep cell dead
 					}
 				}
 				// ===============================================================================
 			}
 		}
-
 
 		if (GetMouse(0).bHeld)
 		{
@@ -211,9 +248,8 @@ protected:
 				}
 		}
 
-
 		size_t nDrawCount = 0;
-		for (const auto& c : setActive)
+		for (const auto &c : setActive)
 		{
 			if (tv.IsRectVisible(olc::vi2d(c), olc::vi2d(1, 1)))
 			{
@@ -222,16 +258,30 @@ protected:
 			}
 		}
 
-		DrawStringDecal({ 2,2 }, "Active: " + std::to_string(setActiveNext.size()) + " / " + std::to_string(setPotentialNext.size()) + " : " + std::to_string(nDrawCount));
+		DrawStringDecal({2, 2}, "Active: " + std::to_string(setActiveNext.size()) + " / " + std::to_string(setPotentialNext.size()) + " : " + std::to_string(nDrawCount));
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
-};
 
+	// Get the horizontal and vertical screen sizes in pixel
+	void getDesktopResolution()
+	{
+		RECT desktop;
+		// Get a handle to the desktop window
+		const HWND hDesktop = GetDesktopWindow();
+		// Get the size of screen to the variable desktop
+		GetWindowRect(hDesktop, &desktop);
+		// The top left corner will have coordinates (0,0)
+		// and the bottom right corner will have coordinates
+		// (horizontal, vertical)
+		screen_width = desktop.right;
+		screen_height = desktop.bottom;
+	}
+};
 
 int main()
 {
 	SparseEncodedGOL demo;
-	if (demo.Construct(1280, 960, 1, 1, false))
+	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, true))
 		demo.Start();
 
 	return 0;
