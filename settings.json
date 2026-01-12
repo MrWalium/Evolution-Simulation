@@ -1,0 +1,12 @@
+// {
+//     "files.exclude": {
+//         "**/*.exe": true,
+//         "**/*.ilk": true,
+//         "**/*.obj": true,
+//         "**/*.h.gch": true,
+//         "**/*.pdb": true,
+//         "**/olcPGEX_TransformedView.h": true,
+//         "**/olcPixelGameEngine.h": true
+//     },
+//     "C_Cpp.default.compilerPath": "C:\\msys64\\mingw64\\bin\\gdb.exe",
+// }
