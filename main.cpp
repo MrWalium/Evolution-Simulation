@@ -73,7 +73,55 @@
 #include <random>
 #include <iostream>
 #include <memory>
+#include <typeinfo>
 #include "wtypes.h"
+
+class Animal {
+	public:
+	Animal(int xpos, int ypos, int r, int g, int b) : x(xpos), y(ypos), itersSinceRepro(0), color(olc::Pixel(r, g, b)) {}
+	
+	virtual bool update() = 0;
+	bool canReproduce() {return itersSinceRepro > 5;}
+	void reproduced() {itersSinceRepro = 0;}
+	olc::Pixel getColor() {return color;}
+	int getX() { return x;}
+	int getY() { return y;}
+	void move(int xpos, int ypos) {x = xpos; y = ypos;}
+
+	protected:
+	int x;
+	int y;
+	int itersSinceRepro;
+	olc::Pixel color;
+
+};
+
+class Predator : public Animal {
+	public:
+	int const RADIUS = 5;
+
+	Predator(int xpos=0, int ypos=0, int r=255, int g=255, int b=255) : Animal(xpos, ypos, r, g, b), itersSinceFood(0) {}
+	
+	bool update() override {
+		itersSinceFood++;
+		itersSinceRepro++;
+		return itersSinceFood > 5;
+	}
+	
+	private:
+	int itersSinceFood;
+};
+
+class Prey : public Animal {
+	public:
+	Prey(int xpos=0, int ypos=0, int r=255, int g=255, int b=255) : Animal(xpos, ypos, r, g, b) {}
+
+	bool update() {
+		itersSinceRepro++;
+		return true;
+	}
+
+};
 
 struct HASH_OLC_VI2D
 {
@@ -102,12 +150,35 @@ public:
 		return screen_height;
 	}
 
+	Prey getCellPrey(const olc::vi2d &in) {
+		return preys.find(in) != preys.end();
+	}
+
+	Predator getCellPredator(const olc::vi2d &in) {
+		return preys.find(in) != preys.end();
+	}
+
 protected:
+	enum class landType {
+		NONE,
+		OCEAN,
+		BEACH,
+		FOREST,
+		MOUNTAIN,
+		SNOW
+	};
+
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActive;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActiveNext;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotential;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
+
+	std::unordered_set<std::unique_ptr<Predator>> predators;
+	std::unordered_set<std::unique_ptr<Prey>> preys;
+	std::unordered_map<olc::vi2d, Animal*> occupancy;
+
 	std::vector<std::vector<float>> terrain;
+	std::vector<std::vector<landType>> land;
 	olc::TransformedView tv;
 	olc::UI_CONTAINER myUI;
 
@@ -119,10 +190,10 @@ protected:
 	int terrainSize;
 	boolean terrainDisplayed = false;
 
-	float OCEAN_LIM = -0.2;
-	float BEACH_LIM = 0.0;
-	float MOUNT_LIM = 0.3;
-	float SNOW_LIM = 0.5;
+	float const OCEAN_LIM = -0.2;
+	float const BEACH_LIM = 0.0;
+	float const MOUNT_LIM = 0.3;
+	float const SNOW_LIM = 0.5;
 
 	// Will be used to obtain a seed for the random number engine
 	// Standard mersenne_twister_engine seeded with rd()
@@ -277,6 +348,9 @@ protected:
 		int rows = std::ceil(static_cast<float>(screen_width) / 10);
 		int columns = std::ceil(static_cast<float>(screen_height) / 10);
 
+		land.clear();
+		land.resize(rows, std::vector<landType>(columns, landType::NONE));
+
 		terrainSprite.reset(new olc::Sprite(rows, columns));
 
 		for (int i = 0; i < rows; i++)
@@ -295,6 +369,7 @@ protected:
 					int g = int(darkBlue[1] + value * (lightBlue[1] - darkBlue[1]));
 					int b = int(darkBlue[2] + value * (lightBlue[2] - darkBlue[2]));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+					land[i][j] = landType::OCEAN;
 				}
 				// --- BEACH BIOM --- //
 				else if (terrain[i][j] >= OCEAN_LIM && terrain[i][j] <= BEACH_LIM)
@@ -305,6 +380,7 @@ protected:
     				int g = 200 + static_cast<int>(55 * value);
     				int b = static_cast<int>(20.0 * (1.0 - value));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+					land[i][j] = landType::BEACH;
 				// --- MOUNTAIN BIOM --- //
 				} else if(terrain[i][j] > MOUNT_LIM && terrain[i][j] < SNOW_LIM) {
 					float value = terrain[i][j] / MOUNT_LIM;
@@ -315,10 +391,12 @@ protected:
 					int g = int(darkGrey[1] + value * (lightGrey[1] - darkGrey[1]));
 					int b = int(darkGrey[2] + value * (lightGrey[2] - darkGrey[2]));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+					land[i][j] = landType::MOUNTAIN;
 				// --- SNOW BIOM --- //
 				} else if(terrain[i][j] >= SNOW_LIM) {
 					terrainSprite->SetPixel(i, j, olc::Pixel(255, 250, 250, 200));
-				// --- FOREST BIOM --- //
+					land[i][j] = landType::SNOW;
+				// --- FORREST BIOM --- //
 				} else {
 					float value = terrain[i][j] / MOUNT_LIM;
 					int darkGreen[3] = {0, 100, 0};
@@ -328,6 +406,7 @@ protected:
 					int g = int(darkGreen[1] + value * (lightGreen[1] - darkGreen[1]));
 					int b = int(darkGreen[2] + value * (lightGreen[2] - darkGreen[2]));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+					land[i][j] = landType::FOREST;
 				}
 			}
 		}
@@ -339,13 +418,41 @@ protected:
 		return setActive.find(in) != setActive.end() ? 1 : 0;
 	}
 
+	void updatePredators() {
+		for(const auto& predator: predators) {
+			Predator& pred = *predator;
+			int x = pred.getX();
+			int y = pred.getY();
+			const int RADIUS = pred.RADIUS;
+			std::vector<std::array<int, 3>> listPreys;
+			for(int i=y-RADIUS; i<=y+RADIUS; i++) {
+				for(int j=x-RADIUS; j<=x+RADIUS; j++) {
+					int dx = j-x;
+					int dy = i-y;
+					if(dx*dx + dy*dy <= RADIUS*RADIUS) {
+						auto cell = occupancy.find(olc::vi2d(j, i));
+						Prey* prey = dynamic_cast<Prey*>(cell->second);
+						if(cell != occupancy.end() && prey) {
+							listPreys.push_back(std::array<int, 3>{cell->second->getX(), cell->second->getY(), 0});
+						}
+					}
+				}
+			}
+		}
+		
+	}
+
+	void updatePrey() {
+
+	}
+
 	bool OnUserUpdate(float fElapsedTime) override
 	{
 		// // tv.HandlePanAndZoom();
 
 		Clear(olc::BLACK);
 
-		displayTerrain(false);
+		displayTerrain();
 
 		if (GetKey(olc::Key::SPACE).bHeld)
 		{
