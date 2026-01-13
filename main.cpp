@@ -113,6 +113,7 @@ protected:
 
 	int screen_width = 0;
 	int screen_height = 0;
+	int terrainSize;
 
 protected:
 	bool OnUserCreate() override
@@ -125,14 +126,15 @@ protected:
 		tv.SetWorldScale({10.0f, 10.0f});
 		// myUI.ToggleDEBUGMODE();
 
-		int terrainArraySize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
+		int terrainSize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
 		float roughnessDelta = 0.6; // from 0 - 1, the smaller the smoother the results
-		makeTerrain(terrainArraySize, roughnessDelta);
+		makeTerrain(roughnessDelta);
+		displayTerrain();
 
 		return true;
 	}
 
-	void fixedAvg(int sqrLen, int i, int j, int v, float roughness, int (&offsets)[4][2])
+	void fixedAvg(int i, int j, int v, float roughness, int (&offsets)[4][2])
 	{
 		float sum = 0.0f;
 		int count = 0;
@@ -141,21 +143,21 @@ protected:
 		{
 			int x = i + offset[0] * v;
 			int y = j + offset[1] * v;
-			if (0 <= x && x < sqrLen && 0 <= y && y < sqrLen)
+			if (0 <= x && x < terrainSize && 0 <= y && y < terrainSize)
 			{
 				sum += terrain[x][y];
 				count++;
 			}
 		}
 
-		std::random_device rd;  // Will be used to obtain a seed for the random number engine
+		std::random_device rd;		  // Will be used to obtain a seed for the random number engine
 		std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
 
 		std::uniform_real_distribution<float> randomness(-roughness, roughness);
 		terrain[i][j] = ((sum / static_cast<float>(count)) + randomness(generator));
 	}
 
-	void diamondSquareStep(int sqrLen, int cellLen, float roughness)
+	void diamondSquareStep(int cellLen, float roughness)
 	{
 		// distance from new cell to nbs to average over
 		int v = std::floor(cellLen / 2);
@@ -165,58 +167,59 @@ protected:
 		int squareOffsets[4][2] = {{-1, 0}, {0, -1}, {1, 0}, {0, 1}};
 
 		// Diamond Step
-		for (int i = v; i < sqrLen; i += cellLen)
+		for (int i = v; i < terrainSize; i += cellLen)
 		{
-			for (int j = v; j < sqrLen; j += cellLen)
+			for (int j = v; j < terrainSize; j += cellLen)
 			{
-				fixedAvg(sqrLen, i, j, v, roughness, diamondOffsets);
+				fixedAvg(i, j, v, roughness, diamondOffsets);
 			}
 		}
 
 		// Square Step with rows
-		for (int i = v; i < sqrLen; i += cellLen)
+		for (int i = v; i < terrainSize; i += cellLen)
 		{
-			for (int j = 0; j < sqrLen; j += cellLen)
+			for (int j = 0; j < terrainSize; j += cellLen)
 			{
-				fixedAvg(sqrLen, i, j, v, roughness, squareOffsets);
+				fixedAvg(i, j, v, roughness, squareOffsets);
 			}
 		}
 
 		// Square Step with columns
-		for (int i = 0; i < sqrLen; i += cellLen)
+		for (int i = 0; i < terrainSize; i += cellLen)
 		{
-			for (int j = v; j < sqrLen; j += cellLen)
+			for (int j = v; j < terrainSize; j += cellLen)
 			{
-				fixedAvg(sqrLen, i, j, v, roughness, squareOffsets);
+				fixedAvg(i, j, v, roughness, squareOffsets);
 			}
 		}
 	}
 
-	void initCorners(int arrSize) {
+	void initCorners(int arrSize)
+	{
 		terrain[0][0] = 0;
-		terrain[0][arrSize-1] = 0;
-		terrain[arrSize-1][0] = 0;
-		terrain[arrSize-1][arrSize-1] = 0;
+		terrain[0][arrSize - 1] = 0;
+		terrain[arrSize - 1][0] = 0;
+		terrain[arrSize - 1][arrSize - 1] = 0;
 	}
 
-	void makeTerrain(int arrSize, float roughnessDelta)
+	void makeTerrain(float roughnessDelta)
 	{
 		terrain.clear();
-		terrain.resize(arrSize, std::vector<float>(arrSize, 0));
-		initCorners(arrSize);
+		terrain.resize(terrainSize, std::vector<float>(terrainSize, 0));
+		initCorners(terrainSize);
 
-		int cellLen = arrSize - 1;
+		int cellLen = terrainSize - 1;
 		float roughness = 1.0;
 
 		while (cellLen > 1)
 		{
-			diamondSquareStep(arrSize, cellLen, roughness);
+			diamondSquareStep(cellLen, roughness);
 
 			cellLen = std::floor(cellLen / 2);
 			roughness *= roughnessDelta;
 		}
 
-		printTerrainArray();
+		// printTerrainArray();
 	}
 
 	void printTerrainArray()
@@ -231,7 +234,22 @@ protected:
 		}
 	}
 
-	int GetCellState(const olc::vi2d &in)
+	void displayTerrain()
+	{
+		int rows = std::ceil(static_cast<float>(screen_width) / 10);
+		int columns = std::ceil(static_cast<float>(screen_height) / 10);
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j< columns; j++)
+			{
+				int luminosity = std::clamp(static_cast<int>(terrain[i][j] * 255), 0, 255);
+				tv.FillRectDecal(olc::vi2d(i, j), olc::vi2d(1, 1), olc::Pixel(luminosity, luminosity, luminosity));
+			}
+		}
+	}
+
+	int
+	GetCellState(const olc::vi2d &in)
 	{
 		return setActive.find(in) != setActive.end() ? 1 : 0;
 	}
@@ -383,6 +401,8 @@ protected:
 		std::string myOut = myUI.getAllCmds();
 		DrawString(50, screen_height * 0.95, myOut);
 		DrawString(50, screen_height * 0.8, "A text field, try using it:", olc::RED);
+
+		displayTerrain();
 
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
