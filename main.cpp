@@ -104,12 +104,11 @@ public:
 	}
 
 protected:
-	static std::default_random_engine generator;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActive;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActiveNext;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotential;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
-	std::vector<std::vector<int>> terrain;
+	std::vector<std::vector<float>> terrain;
 	olc::TransformedView tv;
 
 	int screen_width = 0;
@@ -133,20 +132,27 @@ protected:
 		return true;
 	}
 
-	void fixedAvg(int sqrLen, int i, int j, int v, float roughness, int (&offsets)[4][2]) {
+	void fixedAvg(int sqrLen, int i, int j, int v, float roughness, int (&offsets)[4][2])
+	{
 		float sum = 0.0f;
 		int count = 0;
 
-		for(auto& offset: offsets) {
-			int x = i + offset[0]*v;
-			int y = j + offset[1]*v;
-			if(0 <= x && x < sqrLen && 0 <= y && y < sqrLen) {
+		for (auto &offset : offsets)
+		{
+			int x = i + offset[0] * v;
+			int y = j + offset[1] * v;
+			if (0 <= x && x < sqrLen && 0 <= y && y < sqrLen)
+			{
 				sum += terrain[x][y];
 				count++;
 			}
 		}
+
+		std::random_device rd;  // Will be used to obtain a seed for the random number engine
+		std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
+
 		std::uniform_real_distribution<float> randomness(-roughness, roughness);
-		terrain[i][j] = std::round(((sum / static_cast<float>(count)) + randomness(generator)));
+		terrain[i][j] = ((sum / static_cast<float>(count)) + randomness(generator));
 	}
 
 	void diamondSquareStep(int sqrLen, int cellLen, float roughness)
@@ -186,10 +192,18 @@ protected:
 		}
 	}
 
+	void initCorners(int arrSize) {
+		terrain[0][0] = 0;
+		terrain[0][arrSize-1] = 0;
+		terrain[arrSize-1][0] = 0;
+		terrain[arrSize-1][arrSize-1] = 0;
+	}
+
 	void makeTerrain(int arrSize, float roughnessDelta)
 	{
 		terrain.clear();
-		terrain.resize(arrSize, std::vector<int>(arrSize, 0));
+		terrain.resize(arrSize, std::vector<float>(arrSize, 0));
+		initCorners(arrSize);
 
 		int cellLen = arrSize - 1;
 		float roughness = 1.0;
@@ -205,9 +219,12 @@ protected:
 		printTerrainArray();
 	}
 
-	void printTerrainArray() {
-		for(auto& row: terrain) {
-			for(int value: row) {
+	void printTerrainArray()
+	{
+		for (auto &row : terrain)
+		{
+			for (float value : row)
+			{
 				std::cout << value << " ";
 			}
 			std::cout << std::endl;
