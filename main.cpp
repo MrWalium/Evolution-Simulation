@@ -68,6 +68,10 @@
 #include "olcPGEX_TransformedView.h"
 
 #include <unordered_set>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <iostream>
 #include "wtypes.h"
 
 struct HASH_OLC_VI2D
@@ -100,10 +104,12 @@ public:
 	}
 
 protected:
+	static std::default_random_engine generator;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActive;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActiveNext;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotential;
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
+	std::vector<std::vector<int>> terrain;
 	olc::TransformedView tv;
 
 	int screen_width = 0;
@@ -112,11 +118,100 @@ protected:
 protected:
 	bool OnUserCreate() override
 	{
-		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width-40, 0, 40, 20, "EXIT");
-		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width-15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
+		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
+		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
 		tv.Initialise(GetScreenSize());
-		//myUI.ToggleDEBUGMODE();
+		// 137 w
+		// 77 h
+		tv.SetWorldScale({10.0f, 10.0f});
+		// myUI.ToggleDEBUGMODE();
+
+		int terrainArraySize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
+		float roughnessDelta = 0.6; // from 0 - 1, the smaller the smoother the results
+		makeTerrain(terrainArraySize, roughnessDelta);
+
 		return true;
+	}
+
+	void fixedAvg(int sqrLen, int i, int j, int v, float roughness, int (&offsets)[4][2]) {
+		float sum = 0.0f;
+		int count = 0;
+
+		for(auto& offset: offsets) {
+			int x = i + offset[0]*v;
+			int y = j + offset[1]*v;
+			if(0 <= x && x < sqrLen && 0 <= y && y < sqrLen) {
+				sum += terrain[x][y];
+				count++;
+			}
+		}
+		std::uniform_real_distribution<float> randomness(-roughness, roughness);
+		terrain[i][j] = std::round(((sum / static_cast<float>(count)) + randomness(generator)));
+	}
+
+	void diamondSquareStep(int sqrLen, int cellLen, float roughness)
+	{
+		// distance from new cell to nbs to average over
+		int v = std::floor(cellLen / 2);
+
+		// offsets
+		int diamondOffsets[4][2] = {{-1, -1}, {-1, 1}, {1, 1}, {1, -1}};
+		int squareOffsets[4][2] = {{-1, 0}, {0, -1}, {1, 0}, {0, 1}};
+
+		// Diamond Step
+		for (int i = v; i < sqrLen; i += cellLen)
+		{
+			for (int j = v; j < sqrLen; j += cellLen)
+			{
+				fixedAvg(sqrLen, i, j, v, roughness, diamondOffsets);
+			}
+		}
+
+		// Square Step with rows
+		for (int i = v; i < sqrLen; i += cellLen)
+		{
+			for (int j = 0; j < sqrLen; j += cellLen)
+			{
+				fixedAvg(sqrLen, i, j, v, roughness, squareOffsets);
+			}
+		}
+
+		// Square Step with columns
+		for (int i = 0; i < sqrLen; i += cellLen)
+		{
+			for (int j = v; j < sqrLen; j += cellLen)
+			{
+				fixedAvg(sqrLen, i, j, v, roughness, squareOffsets);
+			}
+		}
+	}
+
+	void makeTerrain(int arrSize, float roughnessDelta)
+	{
+		terrain.clear();
+		terrain.resize(arrSize, std::vector<int>(arrSize, 0));
+
+		int cellLen = arrSize - 1;
+		float roughness = 1.0;
+
+		while (cellLen > 1)
+		{
+			diamondSquareStep(arrSize, cellLen, roughness);
+
+			cellLen = std::floor(cellLen / 2);
+			roughness *= roughnessDelta;
+		}
+
+		printTerrainArray();
+	}
+
+	void printTerrainArray() {
+		for(auto& row: terrain) {
+			for(int value: row) {
+				std::cout << value << " ";
+			}
+			std::cout << std::endl;
+		}
 	}
 
 	int GetCellState(const olc::vi2d &in)
@@ -127,26 +222,6 @@ protected:
 	bool OnUserUpdate(float fElapsedTime) override
 	{
 		// tv.HandlePanAndZoom();
-
-		// this handles the uopdate of all items
-		myUI.Update(fElapsedTime);
-		// if any button in the current UI sends the command EXIT, letsd exit
-		if (myUI.hasCommand("EXIT", false)) return 0;
-		if (myUI.getbtnPressed() == 1) {
-			myUI.setW(1, 50);
-			myUI.setX(1, screen_width-50);
-			myUI.setText(1, ">");
-			myUI.setText(1, ">");
-		}
-		// This draws all items in the UI
-		myUI.drawUIObjects();
-		// lets print a string to the screen telling if the mouse is in any UI.
-		if (myUI.isMouseInUI()) DrawString(50, screen_height* 0.9, ":THE MOUSE IS IN THE UI", olc::RED);
-		else DrawString(50, screen_height* 0.9, ":THE MOUSE NOT IN THE UI", olc::RED);
-		// lets also draw all current commands to the screen
-		std::string myOut = myUI.getAllCmds();
-		DrawString(50, screen_height* 0.95, myOut);
-		DrawString(50, screen_height* 0.8, "A text field, try using it:", olc::RED);
 
 		if (GetKey(olc::Key::SPACE).bHeld)
 		{
@@ -248,17 +323,50 @@ protected:
 				}
 		}
 
+		if (GetKey(olc::Key::C).bPressed)
+		{
+			setActive.clear();
+			setActiveNext.clear();
+			setPotential.clear();
+			setPotentialNext.clear();
+		}
+
 		size_t nDrawCount = 0;
 		for (const auto &c : setActive)
 		{
 			if (tv.IsRectVisible(olc::vi2d(c), olc::vi2d(1, 1)))
 			{
-				tv.FillRectDecal(olc::vi2d(c), olc::vi2d(1, 1), olc::WHITE);
+				tv.FillRectDecal(olc::vi2d(c), olc::vi2d(1, 1), olc::Pixel(255, 30, 75));
 				nDrawCount++;
 			}
 		}
 
 		DrawStringDecal({2, 2}, "Active: " + std::to_string(setActiveNext.size()) + " / " + std::to_string(setPotentialNext.size()) + " : " + std::to_string(nDrawCount));
+
+		// this handles the update of all items
+		myUI.Update(fElapsedTime);
+		// if any button in the current UI sends the command EXIT, letsd exit
+		if (myUI.hasCommand("EXIT", false))
+			return 0;
+		if (myUI.getbtnPressed() == 1)
+		{
+			myUI.setW(1, 50);
+			myUI.setX(1, screen_width - 50);
+			myUI.setText(1, ">");
+			myUI.setText(1, ">");
+		}
+		// This draws all items in the UI
+		myUI.drawUIObjects();
+		// lets print a string to the screen telling if the mouse is in any UI.
+		if (myUI.isMouseInUI())
+			DrawString(50, screen_height * 0.9, ":THE MOUSE IS IN THE UI", olc::RED);
+		else
+			DrawString(50, screen_height * 0.9, ":THE MOUSE NOT IN THE UI", olc::RED);
+		// lets also draw all current commands to the screen
+		std::string myOut = myUI.getAllCmds();
+		DrawString(50, screen_height * 0.95, myOut);
+		DrawString(50, screen_height * 0.8, "A text field, try using it:", olc::RED);
+
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
 
