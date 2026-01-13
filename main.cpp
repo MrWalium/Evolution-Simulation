@@ -72,6 +72,7 @@
 #include <cmath>
 #include <random>
 #include <iostream>
+#include <memory>
 #include "wtypes.h"
 
 struct HASH_OLC_VI2D
@@ -85,8 +86,6 @@ struct HASH_OLC_VI2D
 class SparseEncodedGOL : public olc::PixelGameEngine
 {
 public:
-	olc::UI_CONTAINER myUI;
-
 	SparseEncodedGOL()
 	{
 		sAppName = "Huge Game Of Life";
@@ -110,26 +109,38 @@ protected:
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
 	std::vector<std::vector<float>> terrain;
 	olc::TransformedView tv;
+	olc::UI_CONTAINER myUI;
+
+	std::unique_ptr<olc::Sprite> terrainSprite;
+	std::unique_ptr<olc::Decal> terrainDecal;
 
 	int screen_width = 0;
 	int screen_height = 0;
 	int terrainSize;
+	boolean terrainDisplayed = false;
+
+	// Will be used to obtain a seed for the random number engine
+	// Standard mersenne_twister_engine seeded with rd()
+	std::mt19937 generator{std::random_device{}()};
 
 protected:
 	bool OnUserCreate() override
 	{
-		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
-		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
+
 		tv.Initialise(GetScreenSize());
 		// 137 w
 		// 77 h
 		tv.SetWorldScale({10.0f, 10.0f});
-		// myUI.ToggleDEBUGMODE();
+		myUI.ToggleDEBUGMODE();
 
-		int terrainSize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
+		terrainSize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
 		float roughnessDelta = 0.6; // from 0 - 1, the smaller the smoother the results
 		makeTerrain(roughnessDelta);
+		cacheTerrain();
 		displayTerrain();
+
+		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
+		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
 
 		return true;
 	}
@@ -149,9 +160,6 @@ protected:
 				count++;
 			}
 		}
-
-		std::random_device rd;		  // Will be used to obtain a seed for the random number engine
-		std::mt19937 generator(rd()); // Standard mersenne_twister_engine seeded with rd()
 
 		std::uniform_real_distribution<float> randomness(-roughness, roughness);
 		terrain[i][j] = ((sum / static_cast<float>(count)) + randomness(generator));
@@ -196,10 +204,10 @@ protected:
 
 	void initCorners(int arrSize)
 	{
-		terrain[0][0] = 0;
-		terrain[0][arrSize - 1] = 0;
-		terrain[arrSize - 1][0] = 0;
-		terrain[arrSize - 1][arrSize - 1] = 0;
+		terrain[0][0] = 0.0f;
+		terrain[0][arrSize - 1] = 0.0f;
+		terrain[arrSize - 1][0] = 0.0f;
+		terrain[arrSize - 1][arrSize - 1] = 0.0f;
 	}
 
 	void makeTerrain(float roughnessDelta)
@@ -234,29 +242,61 @@ protected:
 		}
 	}
 
-	void displayTerrain()
+	void displayTerrain(boolean usingOld=false)
 	{
-		int rows = std::ceil(static_cast<float>(screen_width) / 10);
-		int columns = std::ceil(static_cast<float>(screen_height) / 10);
-		for (int i = 0; i < rows; i++)
+		if (!usingOld)
 		{
-			for (int j = 0; j< columns; j++)
+			if (!terrainDecal)
+				return;
+
+			tv.DrawDecal({0, 0}, terrainDecal.get(), {1.0f, 1.0f});
+		}
+		else
+		{
+
+			int rows = std::ceil(static_cast<float>(screen_width) / 10);
+			int columns = std::ceil(static_cast<float>(screen_height) / 10);
+			for (int i = 0; i < rows; i++)
 			{
-				int luminosity = std::clamp(static_cast<int>(terrain[i][j] * 255), 0, 255);
-				tv.FillRectDecal(olc::vi2d(i, j), olc::vi2d(1, 1), olc::Pixel(luminosity, luminosity, luminosity));
+				for (int j = 0; j < columns; j++)
+				{
+					int luminosity = std::clamp(static_cast<int>(std::abs(terrain[i][j]) * 255), 0, 255);
+					tv.FillRectDecal(olc::vi2d(i, j), olc::vi2d(1, 1), olc::Pixel(luminosity, luminosity, luminosity));
+				}
 			}
 		}
 	}
 
-	int
-	GetCellState(const olc::vi2d &in)
+	void cacheTerrain()
+	{
+		int rows = std::ceil(static_cast<float>(screen_width) / 10);
+		int columns = std::ceil(static_cast<float>(screen_height) / 10);
+
+		terrainSprite.reset(new olc::Sprite(rows, columns));
+
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < columns; j++)
+			{
+				int luminosity = std::clamp(static_cast<int>(std::abs(terrain[i][j]) * 255), 0, 255);
+				terrainSprite->SetPixel(i, j, olc::Pixel(luminosity, luminosity, luminosity/*, 200*/));
+			}
+		}
+		terrainDecal.reset(new olc::Decal(terrainSprite.get()));
+	}
+
+	int GetCellState(const olc::vi2d &in)
 	{
 		return setActive.find(in) != setActive.end() ? 1 : 0;
 	}
 
 	bool OnUserUpdate(float fElapsedTime) override
 	{
-		// tv.HandlePanAndZoom();
+		// // tv.HandlePanAndZoom();
+
+		Clear(olc::BLACK);
+
+		displayTerrain(false);
 
 		if (GetKey(olc::Key::SPACE).bHeld)
 		{
@@ -391,7 +431,7 @@ protected:
 			myUI.setText(1, ">");
 		}
 		// This draws all items in the UI
-		myUI.drawUIObjects();
+		myUI.drawUIObjects(); 
 		// lets print a string to the screen telling if the mouse is in any UI.
 		if (myUI.isMouseInUI())
 			DrawString(50, screen_height * 0.9, ":THE MOUSE IS IN THE UI", olc::RED);
@@ -401,8 +441,6 @@ protected:
 		std::string myOut = myUI.getAllCmds();
 		DrawString(50, screen_height * 0.95, myOut);
 		DrawString(50, screen_height * 0.8, "A text field, try using it:", olc::RED);
-
-		displayTerrain();
 
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
