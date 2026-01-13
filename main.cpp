@@ -131,7 +131,7 @@ protected:
 		// 137 w
 		// 77 h
 		tv.SetWorldScale({10.0f, 10.0f});
-		myUI.ToggleDEBUGMODE();
+		// myUI.ToggleDEBUGMODE();
 
 		terrainSize = std::pow(2, std::ceil(std::log2(static_cast<float>(std::max(screen_width, screen_height)) / 10))) + 1;
 		float roughnessDelta = 0.6; // from 0 - 1, the smaller the smoother the results
@@ -140,7 +140,7 @@ protected:
 		displayTerrain();
 
 		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
-		myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
+		// myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
 
 		return true;
 	}
@@ -242,7 +242,7 @@ protected:
 		}
 	}
 
-	void displayTerrain(boolean usingOld=false)
+	void displayTerrain(boolean usingOld = false)
 	{
 		if (!usingOld)
 		{
@@ -278,8 +278,38 @@ protected:
 		{
 			for (int j = 0; j < columns; j++)
 			{
-				int luminosity = std::clamp(static_cast<int>(std::abs(terrain[i][j]) * 255), 0, 255);
-				terrainSprite->SetPixel(i, j, olc::Pixel(luminosity, luminosity, luminosity/*, 200*/));
+				int luminosity = /*std::clamp()*/ static_cast<int>(terrain[i][j] * 255) /*, 0, 255)*/;
+				if (terrain[i][j] < -0.2)
+				{
+					float value = (terrain[i][j] + 1) / (-0.2 + 1);
+					int darkBlue[3] = {0, 0, 53};
+					int lightBlue[3] = {135, 206, 250};
+
+					int r = int(darkBlue[0] + value * (lightBlue[0] - darkBlue[0]));
+					int g = int(darkBlue[1] + value * (lightBlue[1] - darkBlue[1]));
+					int b = int(darkBlue[2] + value * (lightBlue[2] - darkBlue[2]));
+					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+				}
+				else if (terrain[i][j] >= -0.2 && terrain[i][j] <= 0.0)
+				{
+					std::uniform_real_distribution<float> randomness(0, 1);
+					float value = randomness(generator);
+					int r = 255;
+    				int g = 200 + static_cast<int>(55 * value);
+    				int b = static_cast<int>(20.0 * (1.0 - value));
+					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+				} else if(terrain[i][j] > 0.3) {
+					terrainSprite->SetPixel(i, j, olc::Pixel(130, 130, 130, 200));
+				} else {
+					float value = terrain[i][j] / 0.3;
+					int darkGreen[3] = {2, 48, 32};
+					int lightGreen[3] = {144, 238, 144};
+
+					int r = int(darkGreen[0] + value * (lightGreen[0] - darkGreen[0]));
+					int g = int(darkGreen[1] + value * (lightGreen[1] - darkGreen[1]));
+					int b = int(darkGreen[2] + value * (lightGreen[2] - darkGreen[2]));
+					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+				}
 			}
 		}
 		terrainDecal.reset(new olc::Decal(terrainSprite.get()));
@@ -423,24 +453,17 @@ protected:
 		// if any button in the current UI sends the command EXIT, letsd exit
 		if (myUI.hasCommand("EXIT", false))
 			return 0;
-		if (myUI.getbtnPressed() == 1)
-		{
-			myUI.setW(1, 50);
-			myUI.setX(1, screen_width - 50);
-			myUI.setText(1, ">");
-			myUI.setText(1, ">");
-		}
+		// if (myUI.getbtnPressed() == 1)
+		// {
+		// 	myUI.setW(1, 50);
+		// 	myUI.setX(1, screen_width - 50);
+		// 	myUI.setText(1, ">");
+		// 	myUI.setText(1, ">");
+		// }
 		// This draws all items in the UI
-		myUI.drawUIObjects(); 
-		// lets print a string to the screen telling if the mouse is in any UI.
-		if (myUI.isMouseInUI())
-			DrawString(50, screen_height * 0.9, ":THE MOUSE IS IN THE UI", olc::RED);
-		else
-			DrawString(50, screen_height * 0.9, ":THE MOUSE NOT IN THE UI", olc::RED);
+		myUI.drawUIObjects();
 		// lets also draw all current commands to the screen
 		std::string myOut = myUI.getAllCmds();
-		DrawString(50, screen_height * 0.95, myOut);
-		DrawString(50, screen_height * 0.8, "A text field, try using it:", olc::RED);
 
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
