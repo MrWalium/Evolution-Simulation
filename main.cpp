@@ -119,6 +119,11 @@ protected:
 	int terrainSize;
 	boolean terrainDisplayed = false;
 
+	float OCEAN_LIM = -0.2;
+	float BEACH_LIM = 0.0;
+	float MOUNT_LIM = 0.3;
+	float SNOW_LIM = 0.5;
+
 	// Will be used to obtain a seed for the random number engine
 	// Standard mersenne_twister_engine seeded with rd()
 	std::mt19937 generator{std::random_device{}()};
@@ -279,9 +284,10 @@ protected:
 			for (int j = 0; j < columns; j++)
 			{
 				int luminosity = /*std::clamp()*/ static_cast<int>(terrain[i][j] * 255) /*, 0, 255)*/;
-				if (terrain[i][j] < -0.2)
+				// --- OCEAN DIVIDER --- //
+				if (terrain[i][j] < OCEAN_LIM)
 				{
-					float value = (terrain[i][j] + 1) / (-0.2 + 1);
+					float value = (terrain[i][j] + 1) / (OCEAN_LIM + 1);
 					int darkBlue[3] = {0, 0, 53};
 					int lightBlue[3] = {135, 206, 250};
 
@@ -290,7 +296,8 @@ protected:
 					int b = int(darkBlue[2] + value * (lightBlue[2] - darkBlue[2]));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
 				}
-				else if (terrain[i][j] >= -0.2 && terrain[i][j] <= 0.0)
+				// --- BEACH BIOM --- //
+				else if (terrain[i][j] >= OCEAN_LIM && terrain[i][j] <= BEACH_LIM)
 				{
 					std::uniform_real_distribution<float> randomness(0, 1);
 					float value = randomness(generator);
@@ -298,12 +305,24 @@ protected:
     				int g = 200 + static_cast<int>(55 * value);
     				int b = static_cast<int>(20.0 * (1.0 - value));
 					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
-				} else if(terrain[i][j] > 0.3) {
-					terrainSprite->SetPixel(i, j, olc::Pixel(130, 130, 130, 200));
+				// --- MOUNTAIN BIOM --- //
+				} else if(terrain[i][j] > MOUNT_LIM && terrain[i][j] < SNOW_LIM) {
+					float value = terrain[i][j] / MOUNT_LIM;
+					int darkGrey[3] = {51, 51, 51};
+					int lightGrey[3] = {170, 170, 170};
+
+					int r = int(darkGrey[0] + value * (lightGrey[0] - darkGrey[0]));
+					int g = int(darkGrey[1] + value * (lightGrey[1] - darkGrey[1]));
+					int b = int(darkGrey[2] + value * (lightGrey[2] - darkGrey[2]));
+					terrainSprite->SetPixel(i, j, olc::Pixel(r, g, b, 200));
+				// --- SNOW BIOM --- //
+				} else if(terrain[i][j] >= SNOW_LIM) {
+					terrainSprite->SetPixel(i, j, olc::Pixel(255, 250, 250, 200));
+				// --- FOREST BIOM --- //
 				} else {
-					float value = terrain[i][j] / 0.3;
-					int darkGreen[3] = {2, 48, 32};
-					int lightGreen[3] = {144, 238, 144};
+					float value = terrain[i][j] / MOUNT_LIM;
+					int darkGreen[3] = {0, 100, 0};
+					int lightGreen[3] = {0, 186, 0};
 
 					int r = int(darkGreen[0] + value * (lightGreen[0] - darkGreen[0]));
 					int g = int(darkGreen[1] + value * (lightGreen[1] - darkGreen[1]));
