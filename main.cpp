@@ -75,11 +75,12 @@
 #include <memory>
 #include <typeinfo>
 #include <string>
+#include <limits>
 #include "wtypes.h"
 
 class Animal {
 	public:
-	Animal(int xpos, int ypos, int r, int g, int b) : x(xpos), y(ypos), itersSinceRepro(0), color(olc::Pixel(r, g, b)), isDead(false) {}
+	Animal(int xpos, int ypos, olc::Pixel newColor) : x(xpos), y(ypos), itersSinceRepro(0), color(newColor), isDead(false) {}
 	virtual ~Animal() = default;
 	
 	virtual void update() = 0;
@@ -108,7 +109,7 @@ class Predator : public Animal {
 	public:
 	int const RADIUS = 5;
 
-	Predator(int xpos=0, int ypos=0, int r=255, int g=255, int b=255) : Animal(xpos, ypos, r, g, b), itersSinceFood(0) {}
+	Predator(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor), itersSinceFood(0) {}
 	
 	void update() override {
 		itersSinceFood++;
@@ -130,7 +131,7 @@ class Predator : public Animal {
 
 class Prey : public Animal {
 	public:
-	Prey(int xpos=0, int ypos=0, int r=255, int g=255, int b=255) : Animal(xpos, ypos, r, g, b) {}
+	Prey(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor) {}
 
 	void update() {
 		itersSinceRepro++;
@@ -186,7 +187,7 @@ protected:
 
 	std::unordered_set<std::unique_ptr<Predator>> predators;
 	std::unordered_set<std::unique_ptr<Prey>> preys;
-	std::unordered_map<olc::vi2d, Animal*> occupancy;
+	std::unordered_map<olc::vi2d, Animal*, HASH_OLC_VI2D> occupancy;
 
 	std::vector<std::vector<float>> terrain;
 	std::vector<std::vector<landType>> land;
@@ -225,6 +226,8 @@ protected:
 		makeTerrain(roughnessDelta);
 		cacheTerrain();
 		displayTerrain();
+
+		preys.insert(std::make_unique<Prey>(20, 20, olc::Pixel(255, 0, 0)));
 
 		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
 		// myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
@@ -436,6 +439,7 @@ protected:
 
 		for(int i=-1; i<=1; i++) {
 			for(int j=-1; j<=1; j++) {
+				if(i == 0 && j == 0) continue;
 				if(forPred) {
 					if(walkable(olc::vi2d(from.x + i, from.y + j), true)) {
 						possibleMovements.push_back(olc::vi2d(from.x + i, from.y + j));
@@ -473,15 +477,16 @@ protected:
 				olc::vi2d possiblePos = olc::vi2d(pos.x + i, pos.y + j);
 				if(walkable(possiblePos)) {
 					possibleMovements.push_back(possiblePos);
-				} else {
-					auto occupied = occupancy.find(possiblePos);
-					if(occupied != occupancy.end()) {
-						Predator* pred = dynamic_cast<Predator*>(occupied->second);
-						if(pred && (*pred).isAlive()) {
-							preds.push_back(possiblePos);
-						}
+				}
+
+				auto occupied = occupancy.find(possiblePos);
+				if(occupied != occupancy.end()) {
+					Predator* pred = dynamic_cast<Predator*>(occupied->second);
+					if(pred && (*pred).isAlive()) {
+						preds.push_back(possiblePos);
 					}
 				}
+				
 			}
 		}
 
@@ -494,7 +499,7 @@ protected:
 		int best = 0;
 		int bestDist = 0;
 		for(int i=0; i<possibleMovements.size(); i++) {
-			int smallestDist = 10;
+			int smallestDist = std::numeric_limits<int>::max();
 			for(const auto& pred: preds) {
 				if(distSquared(pred, possibleMovements[i]) < smallestDist) {
 					smallestDist = distSquared(pred, possibleMovements[i]);
@@ -502,6 +507,7 @@ protected:
 			}
 			if(smallestDist > bestDist) {
 				best = i;
+				bestDist = smallestDist;
 			}
 		}
 
@@ -538,8 +544,11 @@ protected:
 
 		if(forPred) {
 			auto occupied = occupancy.find(cell);
-			Prey* prey = dynamic_cast<Prey*>(occupied->second);
-			return ((occupancy.find(cell) == occupancy.end()) || (occupied != occupancy.end() && prey && (*prey).isAlive()));
+			if(occupied != occupancy.end()) {
+				Prey* prey = dynamic_cast<Prey*>(occupied->second);
+				return prey && (*prey).isAlive();
+			}
+			return true;
 		}
 		return occupancy.find(cell) == occupancy.end();
 	}
@@ -549,12 +558,13 @@ protected:
 		return setActive.find(in) != setActive.end() ? 1 : 0;
 	}
 
-	void cleanCollections(bool clearPreds, bool clearPreys) {
-		vector<>
-		if(clearPreds && clearPreys) {
-			for(const auto& [pos, animal] : occupancy) {
-				if(!animal->isAlive()) {
-					occupancy.erase(pos);
+	void cleanCollections(bool clearPreds, bool clearPreys, bool doBoth=false) {
+		if(clearPreds && clearPreys && doBoth) {
+			for(auto it = occupancy.begin(); it != occupancy.end();) {
+				if(!it->second->isAlive()) {
+					it = occupancy.erase(it);
+				} else {
+					++it;
 				}
 			}
 		}
@@ -583,6 +593,24 @@ protected:
 		
 	}
 
+	void rebuildOccupancy() {
+		occupancy.clear();
+
+		for(const auto& preyPtr: preys) {
+			Prey& prey = *preyPtr;
+			if(prey.isAlive()) {
+				occupancy.insert_or_assign(prey.getPos(), &prey);
+			}
+		}
+
+		for(const auto& predator: predators) {
+			Predator& pred = *predator;
+			if(pred.isAlive()) {
+			occupancy.insert_or_assign(pred.getPos(), &pred);
+			}
+		}
+	}
+	
 	void updatePredators() {
 		for(const auto& predator: predators) {
 			Predator& pred = *predator;
@@ -610,7 +638,7 @@ protected:
 
 			occupancy.erase(pred.getPos());
 			if(listPreys.size() == 0) {
-				moveRandom(pred.getPos(), false);
+				pred.move(moveRandom(pred.getPos(), false));
 			} else {
 				std::sort(listPreys.begin(), listPreys.end(), 
 					[](const std::array<int, 3>& a, const std::array<int, 3>& b) {
@@ -622,17 +650,18 @@ protected:
 				}
 			}
 			auto cell = occupancy.find(pred.getPos());
-			Prey* prey = dynamic_cast<Prey*>(cell->second);
-			if(cell != occupancy.end() && prey && (*prey).isAlive()) {
-				pred.eat();
-				(*prey).die();
+			if(cell != occupancy.end()) {
+				Prey* prey = dynamic_cast<Prey*>(cell->second);
+				if(prey && (*prey).isAlive()) {
+					pred.eat();
+					(*prey).die();
+				}
 			}
 			occupancy.insert_or_assign(pred.getPos(), &pred);
 		}
-		cleanCollections(true, true);
 	}
 
-	void updatePrey() {
+	void updatePreys() {
 		for(const auto& preyptr: preys) {
 			Prey& prey = *preyptr;
 			int x = prey.getX();
@@ -647,6 +676,26 @@ protected:
 		cleanCollections(false, true);
 	}
 
+	void drawAnimals() {
+		for(const auto& preyPtr: preys) {
+			Prey& prey = *preyPtr;
+			if(prey.isAlive()) {
+				if (tv.IsRectVisible(prey.getPos(), olc::vi2d(1, 1))) {
+					tv.FillRectDecal(prey.getPos(), olc::vi2d(1, 1), prey.getColor());
+				}
+			}
+		}
+
+		for(const auto& predator: predators) {
+			Predator& pred = *predator;
+			if(pred.isAlive()) {
+				if (tv.IsRectVisible(pred.getPos(), olc::vi2d(1, 1))) {
+					tv.FillRectDecal(pred.getPos(), olc::vi2d(1, 1), pred.getColor());
+				}
+			}
+		}
+	}
+	
 	bool OnUserUpdate(float fElapsedTime) override
 	{
 		// // tv.HandlePanAndZoom();
@@ -774,6 +823,13 @@ protected:
 			}
 		}
 
+		updatePreys();
+		updatePredators();
+		
+		drawAnimals();
+		cleanCollections(true, true);
+		rebuildOccupancy();
+		
 		DrawStringDecal({2, 2}, "Active: " + std::to_string(setActiveNext.size()) + " / " + std::to_string(setPotentialNext.size()) + " : " + std::to_string(nDrawCount));
 
 		// this handles the update of all items
