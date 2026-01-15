@@ -490,6 +490,7 @@ protected:
 
 		for(int i=-1; i<=1; i++) {
 			for(int j=-1; j<=1; j++) {
+				if(i == 0 && j == 0) continue;
 				olc::vi2d possiblePos = olc::vi2d(pos.x + j, pos.y + i);
 				if(walkable(possiblePos)) {
 					possibleMovements.push_back(possiblePos);
@@ -510,15 +511,18 @@ protected:
 		if(possibleMovements.size() == 1) {return possibleMovements[0];}
 
 		if(preds.size() == 0) {
-			// std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
-			// return possibleMovements[randMove(generator)];
-
 			//std::vector<int> colorDiffs;
+			std::uniform_real_distribution<> wander(0.0f, 1.0f);
+			if(wander(generator) <= 0.15) {
+				std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
+				return possibleMovements[randMove(generator)]; 
+			}
 			int best = 0;
 			int bestDiff = std::numeric_limits<int>::max();
 			for(int i=0; i<possibleMovements.size(); i++) {
 				olc::vi2d possiblePos = possibleMovements[i];
-				int diffColor = colorDiff(terrainSprite->GetPixel(possiblePos.x, possiblePos.y), color);
+				std::uniform_int_distribution<> randomness(-15, 15);
+				int diffColor = abs(colorDiff(terrainSprite->GetPixel(possiblePos.x, possiblePos.y), color) + randomness(generator));
 				std::cout << prevPos.x << " " << prevPos.y << std::endl;
 				if(diffColor < bestDiff && (possiblePos.x != prevPos.x || possiblePos.y != prevPos.y)) {
 					bestDiff = diffColor;
@@ -946,7 +950,7 @@ protected:
 int main()
 {
 	SparseEncodedGOL demo;
-	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, false))
+	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, true))
 		demo.Start();
 
 	return 0;
