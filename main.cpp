@@ -168,15 +168,9 @@ public:
 		getDesktopResolution();
 	}
 
-	int getScreenWidth()
-	{
-		return screen_width;
-	}
+	int getScreenWidth() { return screen_width; }
 
-	int getScreenHeight()
-	{
-		return screen_height;
-	}
+	int getScreenHeight() { return screen_height; }
 
 protected:
 	enum class landType {
@@ -647,6 +641,57 @@ protected:
 		}
 	}
 	
+	olc::Pixel addColorVariance(olc::Pixel color, int strength) {
+		std::uniform_int_distribution colorVariance(-strength, strength);
+		int r = color.r + colorVariance(generator);
+		int g = color.g + colorVariance(generator);
+		int b = color.b + colorVariance(generator);
+		return olc::Pixel(r, g, b);
+	}
+	
+	void reproduce(olc::vi2d pos, olc::Pixel color=olc::Pixel(255, 0, 0), bool forPred=true) {
+		std::vector<olc::vi2d> possibleMovements;
+		for(int i=-1; i<=1; i++) {
+			for(int j=-1; j<=1; j++) {
+				if(walkable(olc::vi2d(pos.x + i, pos.y + j))) {
+					possibleMovements.push_back(olc::vi2d(pos.x + i, pos.y + j));
+				}
+			}
+		}
+
+		if(possibleMovements.empty()) {return;}
+
+		if(forPred) {
+			std::uniform_int_distribution reproRand(1, 3);
+			int reproTimes = reproRand(generator);
+			if(possibleMovements.size() < reproTimes) {reproTimes = possibleMovements.size();}
+			for(int i=0; i<reproTimes; i++) {
+				std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
+				olc::vi2d reproPos = possibleMovements[randMove(generator)];
+				auto babyPred = std::make_unique<Predator>(reproPos, color);
+
+				Predator* babyPtr = babyPred.get();
+
+				predators.insert(std::move(babyPred));
+				occupancy.insert_or_assign(reproPos, babyPtr);
+			}
+		} else {
+			std::uniform_int_distribution reproRand(1, 7);
+			int reproTimes = reproRand(generator);
+			if(possibleMovements.size() < reproTimes) {reproTimes = possibleMovements.size();}
+			for(int i=0; i<reproTimes; i++) {
+				std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
+				olc::vi2d reproPos = possibleMovements[randMove(generator)];
+				auto babyPrey = std::make_unique<Prey>(reproPos, addColorVariance(color, 5));
+
+				Prey* babyPtr = babyPrey.get();
+
+				preys.insert(std::move(babyPrey));
+				occupancy.insert_or_assign(reproPos, babyPtr);
+			}
+		}
+	}
+	
 	void updatePredators() {
 		for(const auto& predator: predators) {
 			Predator& pred = *predator;
@@ -708,6 +753,8 @@ protected:
 			occupancy.erase(prey.getPos());
 			prey.move(avoidPredators(prey.getPos(), prey.getPrevPos(), prey.getColor()));
 			occupancy.insert_or_assign(prey.getPos(), &prey);
+
+			if(prey.canReproduce()) {reproduce(prey.getPos(), prey.getColor(), false);}
 		}
 		cleanCollections(false, true);
 	}
