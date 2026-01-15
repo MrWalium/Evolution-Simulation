@@ -88,7 +88,7 @@ class Animal {
 	
 	virtual void update() = 0;
 	virtual std::string getType() = 0;
-	bool canReproduce() {return itersSinceRepro > 5;}
+	bool canReproduce() {return itersSinceRepro > 10;}
 	void reproduced() {itersSinceRepro = 0;}
 	olc::Pixel getColor() {return color;}
 	int getX() { return pos.x;}
@@ -188,7 +188,9 @@ protected:
 	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
 
 	std::unordered_set<std::unique_ptr<Predator>> predators;
+	std::unordered_set<std::unique_ptr<Predator>> newPredators;
 	std::unordered_set<std::unique_ptr<Prey>> preys;
+	std::unordered_set<std::unique_ptr<Prey>> newPreys;
 	std::unordered_map<olc::vi2d, Animal*, HASH_OLC_VI2D> occupancy;
 
 	std::vector<std::vector<float>> terrain;
@@ -642,10 +644,10 @@ protected:
 	}
 	
 	olc::Pixel addColorVariance(olc::Pixel color, int strength) {
-		std::uniform_int_distribution colorVariance(-strength, strength);
-		int r = color.r + colorVariance(generator);
-		int g = color.g + colorVariance(generator);
-		int b = color.b + colorVariance(generator);
+		std::uniform_int_distribution<> colorVariance(-strength, strength);
+		int r = std::clamp(color.r + colorVariance(generator), 0, 255);
+		int g = std::clamp(color.g + colorVariance(generator), 0, 255);
+		int b = std::clamp(color.b + colorVariance(generator), 0, 255);
 		return olc::Pixel(r, g, b);
 	}
 	
@@ -653,7 +655,7 @@ protected:
 		std::vector<olc::vi2d> possibleMovements;
 		for(int i=-1; i<=1; i++) {
 			for(int j=-1; j<=1; j++) {
-				if(walkable(olc::vi2d(pos.x + i, pos.y + j))) {
+				if(walkable(olc::vi2d(pos.x + j, pos.y + i))) {
 					possibleMovements.push_back(olc::vi2d(pos.x + i, pos.y + j));
 				}
 			}
@@ -672,21 +674,23 @@ protected:
 
 				Predator* babyPtr = babyPred.get();
 
-				predators.insert(std::move(babyPred));
+				newPredators.insert(std::move(babyPred));
 				occupancy.insert_or_assign(reproPos, babyPtr);
 			}
 		} else {
-			std::uniform_int_distribution reproRand(1, 7);
+			std::uniform_int_distribution reproRand(1, 5);
 			int reproTimes = reproRand(generator);
 			if(possibleMovements.size() < reproTimes) {reproTimes = possibleMovements.size();}
 			for(int i=0; i<reproTimes; i++) {
 				std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
-				olc::vi2d reproPos = possibleMovements[randMove(generator)];
-				auto babyPrey = std::make_unique<Prey>(reproPos, addColorVariance(color, 5));
+				int randIndex = randMove(generator);
+				olc::vi2d reproPos = possibleMovements[randIndex];
+				possibleMovements.erase(possibleMovements.begin() + randIndex);
+				auto babyPrey = std::make_unique<Prey>(reproPos, addColorVariance(color, 40));
 
 				Prey* babyPtr = babyPrey.get();
 
-				preys.insert(std::move(babyPrey));
+				newPreys.insert(std::move(babyPrey));
 				occupancy.insert_or_assign(reproPos, babyPtr);
 			}
 		}
@@ -756,6 +760,8 @@ protected:
 
 			if(prey.canReproduce()) {reproduce(prey.getPos(), prey.getColor(), false);}
 		}
+		preys.merge(newPreys);
+		newPreys.clear();
 		cleanCollections(false, true);
 	}
 
