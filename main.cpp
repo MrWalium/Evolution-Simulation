@@ -82,7 +82,8 @@
 
 class Animal {
 	public:
-	Animal(int xpos, int ypos, olc::Pixel newColor) : x(xpos), y(ypos), itersSinceRepro(0), color(newColor), isDead(false) {}
+	Animal(int xpos, int ypos, olc::Pixel newColor) : pos(olc::vi2d(xpos, ypos)), prevPos(olc::vi2d(xpos, ypos)), itersSinceRepro(0), color(newColor), isDead(false) {}
+	Animal(olc::vi2d newPos, olc::Pixel newColor) : pos(newPos), prevPos(newPos), itersSinceRepro(0), color(newColor), isDead(false) {}
 	virtual ~Animal() = default;
 	
 	virtual void update() = 0;
@@ -90,17 +91,20 @@ class Animal {
 	bool canReproduce() {return itersSinceRepro > 5;}
 	void reproduced() {itersSinceRepro = 0;}
 	olc::Pixel getColor() {return color;}
-	int getX() { return x;}
-	int getY() { return y;}
-	olc::vi2d getPos() {return olc::vi2d(x, y);}
-	void move(int xpos, int ypos) {x = xpos; y = ypos;}
-	void move(olc::vi2d pos) {x = pos.x; y = pos.y;}
+	int getX() { return pos.x;}
+	int getY() { return pos.y;}
+	int getPrevX() { return prevPos.x;}
+	int getPrevY() { return prevPos.y;}
+	olc::vi2d getPos() {return pos;}
+	olc::vi2d getPrevPos() {return prevPos;}
+	void move(int xpos, int ypos) {prevPos = pos; pos = olc::vi2d(xpos, ypos);}
+	void move(olc::vi2d newPos) {prevPos = pos; pos = newPos;}
 	void die() {isDead = true;}
 	bool isAlive() {return !isDead;}
 
 	protected:
-	int x;
-	int y;
+	olc::vi2d pos;
+	olc::vi2d prevPos;
 	int itersSinceRepro;
 	bool isDead;
 	olc::Pixel color;
@@ -112,6 +116,7 @@ class Predator : public Animal {
 	int const RADIUS = 5;
 
 	Predator(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor), itersSinceFood(0) {}
+	Predator(olc::vi2d newPos, olc::Pixel newColor) : Animal(newPos, newColor), itersSinceFood(0) {}
 	
 	void update() override {
 		itersSinceFood++;
@@ -134,6 +139,7 @@ class Predator : public Animal {
 class Prey : public Animal {
 	public:
 	Prey(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor) {}
+	Prey(olc::vi2d newPos, olc::Pixel newColor) : Animal(newPos, newColor) {}
 
 	void update() {
 		itersSinceRepro++;
@@ -474,7 +480,11 @@ protected:
 		// );
 	}
 
-	olc::vi2d avoidPredators(olc::vi2d pos) {
+	int colorDiff(olc::Pixel color1, olc::Pixel color2) {
+		return std::floor(static_cast<float>(abs(color1.r - color2.r) + abs(color1.g - color2.g) + abs(color1.b - color2.b)) / 3.0);
+	}
+	
+	olc::vi2d avoidPredators(olc::vi2d pos, olc::vi2d prevPos, olc::Pixel color) {
 		std::vector<olc::vi2d> possibleMovements;
 		std::vector<olc::vi2d> preds;
 
@@ -496,10 +506,26 @@ protected:
 			}
 		}
 
-		if(possibleMovements.size() == 0) {return pos;}
+		if(possibleMovements.empty()) {return pos;}
+		if(possibleMovements.size() == 1) {return possibleMovements[0];}
+
 		if(preds.size() == 0) {
-			std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
-			return possibleMovements[randMove(generator)];
+			// std::uniform_int_distribution<> randMove(0, possibleMovements.size() - 1);
+			// return possibleMovements[randMove(generator)];
+
+			//std::vector<int> colorDiffs;
+			int best = 0;
+			int bestDiff = std::numeric_limits<int>::max();
+			for(int i=0; i<possibleMovements.size(); i++) {
+				olc::vi2d possiblePos = possibleMovements[i];
+				int diffColor = colorDiff(terrainSprite->GetPixel(possiblePos.x, possiblePos.y), color);
+				std::cout << prevPos.x << " " << prevPos.y << std::endl;
+				if(diffColor < bestDiff && (possiblePos.x != prevPos.x || possiblePos.y != prevPos.y)) {
+					bestDiff = diffColor;
+					best = i;
+				}
+			}
+			return possibleMovements[best];
 		}
 
 		int best = 0;
@@ -676,7 +702,7 @@ protected:
 			if(!prey.isAlive()) {continue;}
 
 			occupancy.erase(prey.getPos());
-			prey.move(avoidPredators(prey.getPos()));
+			prey.move(avoidPredators(prey.getPos(), prey.getPrevPos(), prey.getColor()));
 			occupancy.insert_or_assign(prey.getPos(), &prey);
 		}
 		cleanCollections(false, true);
@@ -707,7 +733,7 @@ protected:
 		std::chrono::duration<double, std::milli> work_time = currTime - prevTime;
 
 		if(work_time.count() < 1000.0 / static_cast<float>(FPS)) {
-			std::chrono::duration<double, std::milli> delta_ms(200.0 - work_time.count());
+			std::chrono::duration<double, std::milli> delta_ms(1000.0 / static_cast<float>(FPS) - work_time.count());
             auto delta_ms_duration = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
             std::this_thread::sleep_for(std::chrono::milliseconds(delta_ms_duration.count()));
 		}
@@ -752,6 +778,7 @@ protected:
 
 		if (GetKey(olc::Key::SPACE).bHeld)
 		{
+			
 
 			setActive = setActiveNext;
 			setActiveNext.clear();
@@ -895,7 +922,7 @@ protected:
 		// lets also draw all current commands to the screen
 		std::string myOut = myUI.getAllCmds();
 
-		limitFPS();
+		limitFPS(true);
 
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
