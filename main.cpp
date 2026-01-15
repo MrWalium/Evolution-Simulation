@@ -76,6 +76,8 @@
 #include <typeinfo>
 #include <string>
 #include <limits>
+#include <chrono>
+#include <thread>
 #include "wtypes.h"
 
 class Animal {
@@ -197,6 +199,9 @@ protected:
 	std::unique_ptr<olc::Sprite> terrainSprite;
 	std::unique_ptr<olc::Decal> terrainDecal;
 
+	std::chrono::system_clock::time_point currTime = std::chrono::system_clock::now();
+	std::chrono::system_clock::time_point prevTime = std::chrono::system_clock::now();
+
 	int screen_width = 0;
 	int screen_height = 0;
 	int terrainSize;
@@ -206,6 +211,7 @@ protected:
 	float const BEACH_LIM = 0.0;
 	float const MOUNT_LIM = 0.3;
 	float const SNOW_LIM = 0.5;
+	int FPS = 3;
 
 	// Will be used to obtain a seed for the random number engine
 	// Standard mersenne_twister_engine seeded with rd()
@@ -474,7 +480,7 @@ protected:
 
 		for(int i=-1; i<=1; i++) {
 			for(int j=-1; j<=1; j++) {
-				olc::vi2d possiblePos = olc::vi2d(pos.x + i, pos.y + j);
+				olc::vi2d possiblePos = olc::vi2d(pos.x + j, pos.y + i);
 				if(walkable(possiblePos)) {
 					possibleMovements.push_back(possiblePos);
 				}
@@ -696,6 +702,46 @@ protected:
 		}
 	}
 	
+	void limitFPS(bool debug=false) {
+		currTime = std::chrono::system_clock::now();
+		std::chrono::duration<double, std::milli> work_time = currTime - prevTime;
+
+		if(work_time.count() < 1000.0 / static_cast<float>(FPS)) {
+			std::chrono::duration<double, std::milli> delta_ms(200.0 - work_time.count());
+            auto delta_ms_duration = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
+            std::this_thread::sleep_for(std::chrono::milliseconds(delta_ms_duration.count()));
+		}
+
+		prevTime = std::chrono::system_clock::now();
+		if(debug) {
+			std::chrono::duration<double, std::milli> sleep_time = prevTime - currTime;
+			printf("Time: %f \n", (work_time + sleep_time).count());
+		}
+	}
+	
+	std::string landTypeToString(landType landt) {
+		switch(landt) {
+			case landType::OCEAN:
+				return "OCEAN";
+			case landType::BEACH:
+				return "BEACH";
+			case landType::FOREST:
+				return "FOREST";
+			case landType::MOUNTAIN:
+				return "MOUNTAIN";
+			case landType::SNOW:
+				return "SNOW";
+			default:
+				return "NONE";
+		}
+		return "NONE";
+	}
+	
+	void mouseDebug() {
+		auto m = tv.ScreenToWorld(GetMousePos());
+		std::cout << landTypeToString(land[std::floor(m.x)][std::floor(m.y)]) << " (" << m.x << ", " << m.y << ")" << std::endl;
+	}
+	
 	bool OnUserUpdate(float fElapsedTime) override
 	{
 		// // tv.HandlePanAndZoom();
@@ -849,6 +895,8 @@ protected:
 		// lets also draw all current commands to the screen
 		std::string myOut = myUI.getAllCmds();
 
+		limitFPS();
+
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
 
@@ -871,7 +919,7 @@ protected:
 int main()
 {
 	SparseEncodedGOL demo;
-	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, true))
+	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, false))
 		demo.Start();
 
 	return 0;
