@@ -88,7 +88,7 @@ class Animal {
 	
 	virtual void update() = 0;
 	virtual std::string getType() = 0;
-	bool canReproduce() {return itersSinceRepro > 10;}
+	virtual bool canReproduce() = 0;
 	void reproduced() {itersSinceRepro = 0;}
 	olc::Pixel getColor() {return color;}
 	int getX() { return pos.x;}
@@ -121,7 +121,7 @@ class Predator : public Animal {
 	void update() override {
 		itersSinceFood++;
 		itersSinceRepro++;
-		isDead = itersSinceFood > 5;
+		isDead = itersSinceFood > 100000;
 	}
 
 	void eat() {
@@ -130,6 +130,10 @@ class Predator : public Animal {
 
 	std::string getType() {
 		return "Predator";
+	}
+
+	bool canReproduce() {
+		return itersSinceRepro > 10;
 	}
 	
 	private:
@@ -147,6 +151,10 @@ class Prey : public Animal {
 
 	std::string getType() {
 		return "Prey";
+	}
+
+	bool canReproduce() {
+		return itersSinceRepro > 25;
 	}
 
 };
@@ -235,7 +243,8 @@ protected:
 		cacheTerrain();
 		displayTerrain();
 
-		preys.insert(std::make_unique<Prey>(20, 20, olc::Pixel(255, 0, 0)));
+		preys.insert(std::make_unique<Prey>(20, 20, olc::Pixel(0, 255, 0)));
+		predators.insert(std::make_unique<Predator>(30, 20, olc::Pixel(255, 0, 0)));
 
 		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
 		// myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
@@ -570,7 +579,7 @@ protected:
 	}
 	
 	bool walkable(olc::vi2d cell, bool forPred=false) {
-		if (cell.y < 0 || cell.y >= (int)land.size() || cell.x < 0 || cell.x >= (int)land[0].size() || land[cell.y][cell.x] == landType::OCEAN) {
+		if (cell.y < 0 || cell.y >= (int)land[0].size() || cell.x < 0 || cell.x >= (int)land.size() || land[cell.x][cell.y] == landType::OCEAN) {
 			return false;
 		}
 
@@ -686,7 +695,7 @@ protected:
 				int randIndex = randMove(generator);
 				olc::vi2d reproPos = possibleMovements[randIndex];
 				possibleMovements.erase(possibleMovements.begin() + randIndex);
-				auto babyPrey = std::make_unique<Prey>(reproPos, addColorVariance(color, 40));
+				auto babyPrey = std::make_unique<Prey>(reproPos, addColorVariance(color, 70));
 
 				Prey* babyPtr = babyPrey.get();
 
@@ -758,7 +767,7 @@ protected:
 			prey.move(avoidPredators(prey.getPos(), prey.getPrevPos(), prey.getColor()));
 			occupancy.insert_or_assign(prey.getPos(), &prey);
 
-			if(prey.canReproduce()) {reproduce(prey.getPos(), prey.getColor(), false);}
+			if(prey.canReproduce()) {reproduce(prey.getPos(), prey.getColor(), false); prey.reproduced();}
 		}
 		preys.merge(newPreys);
 		newPreys.clear();
