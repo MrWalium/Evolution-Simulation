@@ -214,12 +214,12 @@ struct SpacialHash {
 	}
 };
 
-class SparseEncodedGOL : public olc::PixelGameEngine
+class SparseEncodedLifeSim : public olc::PixelGameEngine
 {
 public:
-	SparseEncodedGOL()
+	SparseEncodedLifeSim()
 	{
-		sAppName = "Huge Game Of Life";
+		sAppName = "A Mediumly Sized Predator and Prey Simulation";
 		getDesktopResolution();
 	}
 
@@ -236,11 +236,6 @@ protected:
 		MOUNTAIN,
 		SNOW
 	};
-
-	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActive;
-	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setActiveNext;
-	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotential;
-	std::unordered_set<olc::vi2d, HASH_OLC_VI2D> setPotentialNext;
 
 	std::unordered_set<std::unique_ptr<Predator>> predators;
 	std::unordered_set<std::unique_ptr<Predator>> newPredators;
@@ -765,11 +760,6 @@ protected:
 		}
 		return occupancy.find(cell) == occupancy.end();
 	}
-	
-	int GetCellState(const olc::vi2d &in)
-	{
-		return setActive.find(in) != setActive.end() ? 1 : 0;
-	}
 
 	void cleanCollections(bool clearPreds, bool clearPreys, bool doBoth=false) {
 		if(clearPreds && clearPreys && doBoth) {
@@ -1029,124 +1019,23 @@ protected:
 
 		displayTerrain();
 
-		if (GetKey(olc::Key::SPACE).bHeld)
-		{
+		if (GetKey(olc::Key::SPACE).bHeld) {
 			
-
-			setActive = setActiveNext;
-			setActiveNext.clear();
-			setActiveNext.reserve(setActive.size());
-
-			setPotential = setPotentialNext;
-
-			// We know all active cells this epoch have potential to stimulate next epoch
-			setPotentialNext = setActive;
-
-			for (const auto &c : setPotential)
-			{
-				// Cell has changed, apply rules
-
-				// The secret of artificial life =================================================
-				int nNeighbours =
-					GetCellState(olc::vi2d(c.x - 1, c.y - 1)) +
-					GetCellState(olc::vi2d(c.x - 0, c.y - 1)) +
-					GetCellState(olc::vi2d(c.x + 1, c.y - 1)) +
-					GetCellState(olc::vi2d(c.x - 1, c.y + 0)) +
-					GetCellState(olc::vi2d(c.x + 1, c.y + 0)) +
-					GetCellState(olc::vi2d(c.x - 1, c.y + 1)) +
-					GetCellState(olc::vi2d(c.x + 0, c.y + 1)) +
-					GetCellState(olc::vi2d(c.x + 1, c.y + 1));
-
-				if (GetCellState(c) == 1)
-				{
-					// if cell is alive and has 2 or 3 neighbours, cell lives on
-					int s = (nNeighbours == 2 || nNeighbours == 3);
-
-					if (s == 0)
-					{
-						// Kill cell through activity omission
-
-						// Neighbours are stimulated for computation next epoch
-						for (int y = -1; y <= 1; y++)
-							for (int x = -1; x <= 1; x++)
-								setPotentialNext.insert(c + olc::vi2d(x, y));
-					}
-					else
-					{
-						// No Change - Keep cell alive
-						setActiveNext.insert(c);
-					}
-				}
-				else
-				{
-					int s = (nNeighbours == 3);
-					if (s == 1)
-					{
-						// Spawn cell
-						setActiveNext.insert(c);
-
-						// Neighbours are stimulated for computation next epoch
-						for (int y = -1; y <= 1; y++)
-							for (int x = -1; x <= 1; x++)
-								setPotentialNext.insert(c + olc::vi2d(x, y));
-					}
-					else
-					{
-						// No Change - Keep cell dead
-					}
-				}
-				// ===============================================================================
-			}
 		}
 
 		if (GetMouse(0).bHeld)
 		{
-			auto m = tv.ScreenToWorld(GetMousePos());
-
-			setActiveNext.insert(m);
-			setActive.insert(m);
-
-			for (int y = -1; y <= 1; y++)
-				for (int x = -1; x <= 1; x++)
-					setPotentialNext.insert(m + olc::vi2d(x, y));
+			// Do something if left click
 		}
 
 		if (GetMouse(1).bHeld)
 		{
-			auto m = tv.ScreenToWorld(GetMousePos());
-
-			for (int i = -50; i <= 50; i++)
-				for (int j = -50; j < 50; j++)
-				{
-					std::uniform_int_distribution<> randomness(0, 2);
-					if (randomness(generator))
-					{
-						setActiveNext.insert(m + olc::vi2d(i, j));
-						setActive.insert(m + olc::vi2d(i, j));
-
-						for (int y = -1; y <= 1; y++)
-							for (int x = -1; x <= 1; x++)
-								setPotentialNext.insert(m + olc::vi2d(i + x, j + y));
-					}
-				}
+			
 		}
 
 		if (GetKey(olc::Key::C).bPressed)
 		{
-			setActive.clear();
-			setActiveNext.clear();
-			setPotential.clear();
-			setPotentialNext.clear();
-		}
-
-		size_t nDrawCount = 0;
-		for (const auto &c : setActive)
-		{
-			if (tv.IsRectVisible(olc::vi2d(c), olc::vi2d(1, 1)))
-			{
-				tv.FillRectDecal(olc::vi2d(c), olc::vi2d(1, 1), olc::Pixel(255, 30, 75));
-				nDrawCount++;
-			}
+			// do something if C if pressed
 		}
 
 		updatePreys();
@@ -1156,7 +1045,7 @@ protected:
 		cleanCollections(true, true);
 		rebuildOccupancy();
 		
-		DrawStringDecal({2, 2}, "Active: " + std::to_string(setActiveNext.size()) + " / " + std::to_string(setPotentialNext.size()) + " : " + std::to_string(nDrawCount));
+		DrawStringDecal({2, 2}, "Active: " + std::to_string(preys.size()) + " / " + std::to_string(predators.size()));
 
 		// this handles the update of all items
 		myUI.Update(fElapsedTime);
@@ -1198,7 +1087,7 @@ protected:
 
 int main()
 {
-	SparseEncodedGOL demo;
+	SparseEncodedLifeSim demo;
 	if (demo.Construct(/*1280, 960*/ demo.getScreenWidth(), demo.getScreenHeight(), 1, 1, true))
 		demo.Start();
 
