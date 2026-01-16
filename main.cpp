@@ -78,6 +78,7 @@
 #include <limits>
 #include <chrono>
 #include <thread>
+#include <utility>
 #include "wtypes.h"
 
 class Animal {
@@ -142,11 +143,13 @@ class Predator : public Animal {
 
 class Prey : public Animal {
 	public:
-	Prey(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor) {}
-	Prey(olc::vi2d newPos, olc::Pixel newColor) : Animal(newPos, newColor) {}
+	Prey(int xpos, int ypos, olc::Pixel newColor) : Animal(xpos, ypos, newColor), itersAlive(0) {}
+	Prey(olc::vi2d newPos, olc::Pixel newColor) : Animal(newPos, newColor), itersAlive(0) {}
 
 	void update() {
 		itersSinceRepro++;
+		itersAlive++;
+		isDead = itersAlive > 26;
 	}
 
 	std::string getType() {
@@ -154,8 +157,11 @@ class Prey : public Animal {
 	}
 
 	bool canReproduce() {
-		return itersSinceRepro > 25;
+		return itersSinceRepro >= 25;
 	}
+
+	private:
+	int itersAlive;
 
 };
 
@@ -263,6 +269,8 @@ protected:
 	float const MOUNT_LIM = 0.3;
 	float const SNOW_LIM = 0.5;
 	float const INTER_PRED_R = 15.0f;
+	float const INTER_PREY_R = 5.0f;
+	float const PRED_PREY_R = 8.0f;
 	int const NUMBER_START_PTS = 5;
 	int FPS = 3;
 	// this is how many random vectors will be generated and tested for an active point before inactivated
@@ -310,7 +318,7 @@ protected:
 		return olc::vi2d(static_cast<int>(base.x + r * std::cos(a)), static_cast<int>(base.y + r * std::sin(a)));
 	}
 
-	void generatePredators() {
+	std::pair<std::vector<olc::vi2d>, SpacialHash> generatePredators() {
 		std::vector<olc::vi2d> points;
 		std::vector<olc::vi2d> active;
 
@@ -361,10 +369,65 @@ protected:
 			predators.insert(std::make_unique<Predator>(point, olc::Pixel(255, 0, 0)));
 		}
 		rebuildOccupancy();
+		return std::make_pair(points, grid);
+	}
+	
+	void generatePrey(std::vector<olc::vi2d> predPoints, SpacialHash predGrid) {
+		std::vector<olc::vi2d> preyPoints;
+		std::vector<olc::vi2d> preyActive;
+
+		// the r/sqrt(2) grid for O(N) neighbor checking
+		SpacialHash grid(INTER_PREY_R);
+
+
+		std::uniform_int_distribution<> startX(0, screen_width);
+		std::uniform_int_distribution<> startY(0, screen_height);
+		for(int i=0; i<NUMBER_START_PTS; i++) {
+			olc::vi2d startPoint = olc::vi2d(startX(generator), startY(generator));
+			while(!walkable(startPoint) || !grid.farEnough(startPoint, preyPoints, INTER_PREY_R) || !predGrid.farEnough(startPoint, predPoints, PRED_PREY_R)) {
+				startPoint = olc::vi2d(startX(generator), startY(generator));
+			}
+
+			preyPoints.push_back(startPoint);
+			preyActive.push_back(startPoint);
+			grid.insert(startPoint, i);
+		}
+
+		while(!preyActive.empty()) {
+			//std::cout << active.size() << std::endl;
+			std::uniform_int_distribution<> randIndex(0, preyActive.size() - 1);
+			int index = randIndex(generator);
+			olc::vi2d basePt = preyActive[index];
+			bool valid = false;
+
+			for(int i=0; i<TEST_POINTS+5; i++) {
+				olc::vi2d randVect = randVector(basePt, INTER_PRED_R);
+				if(!walkable(randVect) || !grid.farEnough(randVect, preyPoints, INTER_PREY_R) || !predGrid.farEnough(randVect, predPoints, PRED_PREY_R)) continue;
+
+				preyPoints.push_back(randVect);
+				preyActive.push_back(randVect);
+				grid.insert(randVect, preyPoints.size() - 1);
+
+				valid = true;
+				break;
+			}
+
+			if(!valid) {
+				preyActive[index] = preyActive.back();
+				preyActive.pop_back();
+			}
+		}
+		for(const auto& point: preyPoints) {
+			olc::vi2d newPredPos = point;
+			std::uniform_int_distribution<> randColor(0, 255);
+			preys.insert(std::make_unique<Prey>(point, olc::Pixel(randColor(generator), randColor(generator), randColor(generator))));
+		}
+		rebuildOccupancy();
 	}
 	
 	void poissonDiskSample() {
-		generatePredators();
+		std::pair<std::vector<olc::vi2d>, SpacialHash> predResult = generatePredators();
+		generatePrey(predResult.first, predResult.second);
 	}
 	
 	void fixedAvg(int i, int j, int v, float roughness, int (&offsets)[4][2])
@@ -637,7 +700,7 @@ protected:
 				olc::vi2d possiblePos = possibleMovements[i];
 				std::uniform_int_distribution<> randomness(-15, 15);
 				int diffColor = abs(colorDiff(terrainSprite->GetPixel(possiblePos.x, possiblePos.y), color) + randomness(generator));
-				std::cout << prevPos.x << " " << prevPos.y << std::endl;
+				//std::cout << prevPos.x << " " << prevPos.y << std::endl;
 				if(diffColor < bestDiff && (possiblePos.x != prevPos.x || possiblePos.y != prevPos.y)) {
 					bestDiff = diffColor;
 					best = i;
@@ -832,7 +895,13 @@ protected:
 						if(cell != occupancy.end()) {
 							Prey* prey = dynamic_cast<Prey*>(cell->second);
 							if(prey && (*prey).isAlive()) {
-								listPreys.push_back(std::array<int, 3>{cell->second->getX(), cell->second->getY(), 0});
+								int colorDifference = colorDiff((*prey).getColor(), terrainSprite->GetPixel((*prey).getX(), (*prey).getY()));
+								if(colorDifference > 50) {}
+									listPreys.push_back(std::array<int, 3>{
+										(*prey).getX(), 
+										(*prey).getY(), 
+										colorDifference});
+								}
 							}
 						}
 					}
@@ -845,11 +914,15 @@ protected:
 			} else {
 				std::sort(listPreys.begin(), listPreys.end(), 
 					[](const std::array<int, 3>& a, const std::array<int, 3>& b) {
-						return a.back() < b.back(); // Use .back() to access the last element
+						return a.back() > b.back(); // Use .back() to access the last element
 					});
 				if(listPreys.size() != 0) {
-					pred.move(stepTowords(olc::vi2d(x, y), olc::vi2d(listPreys[0][0], listPreys[0][1])));
-					
+					std::uniform_real_distribution<> jump(0.0f, 1.0f);
+					if(jump(generator) <= 0.07) {
+						pred.move(olc::vi2d(listPreys[0][0], listPreys[0][1]));
+					} else {
+						pred.move(stepTowords(olc::vi2d(x, y), olc::vi2d(listPreys[0][0], listPreys[0][1])));
+					}
 				}
 			}
 			auto cell = occupancy.find(pred.getPos());
