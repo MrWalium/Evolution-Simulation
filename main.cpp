@@ -121,7 +121,7 @@ class Predator : public Animal {
 	void update() override {
 		itersSinceFood++;
 		itersSinceRepro++;
-		isDead = itersSinceFood > 100000;
+		isDead = itersSinceFood > 35;
 	}
 
 	void eat() {
@@ -133,7 +133,7 @@ class Predator : public Animal {
 	}
 
 	bool canReproduce() {
-		return itersSinceRepro > 10;
+		return itersSinceRepro > 35;
 	}
 	
 	private:
@@ -164,6 +164,47 @@ struct HASH_OLC_VI2D
 	std::size_t operator()(const olc::vi2d &v) const
 	{
 		return int64_t(v.y << sizeof(int32_t) | v.x);
+	}
+};
+
+int distSquared(olc::vi2d from, olc::vi2d to) {
+	int dx = from.x - to.x;
+	int dy = from.y - to.y;
+	return dx * dx + dy * dy;
+}
+
+struct SpacialHash {
+	float cellSize;
+	std::unordered_map<long long, int> cells;
+
+	SpacialHash(float radius) : cellSize(radius/std::sqrt(2.0)) {}
+
+	long long hash(int x, int y) const {
+        return (static_cast<long long>(x) << 32) ^ (y & 0xffffffff);
+    }
+
+	void insert(olc::vi2d pos, int index) {
+		int gridX = (int)std::floor(static_cast<float>(pos.x) / cellSize);
+		int gridY = (int)std::floor(static_cast<float>(pos.y) / cellSize);
+		cells[hash(gridX, gridY)] = index;
+	}
+
+	bool farEnough(olc::vi2d pos, std::vector<olc::vi2d> points, float radius) {
+		int gridX = (int)std::floor(static_cast<float>(pos.x) / cellSize);
+		int gridY = (int)std::floor(static_cast<float>(pos.y) / cellSize);
+		float radius2 = radius * radius;
+
+		for(int i=-2; i<=2; i++) {
+			for(int j=-2; j<=2; j++) {
+				//if(i == 0 && j == 0) continue;
+				auto it = cells.find(hash(gridX + j, gridY + i));
+				if(it == cells.end()) continue;
+				if(distSquared(points[it->second], pos) < radius2) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 };
 
@@ -221,7 +262,10 @@ protected:
 	float const BEACH_LIM = 0.0;
 	float const MOUNT_LIM = 0.3;
 	float const SNOW_LIM = 0.5;
+	float const INTER_PRED_R = 10.0f;
 	int FPS = 3;
+	// this is how many random vectors will be generated and tested for an active point before inactivated
+	const int TEST_POINTS = 10;
 
 	// Will be used to obtain a seed for the random number engine
 	// Standard mersenne_twister_engine seeded with rd()
@@ -243,8 +287,11 @@ protected:
 		cacheTerrain();
 		displayTerrain();
 
-		preys.insert(std::make_unique<Prey>(20, 20, olc::Pixel(0, 255, 0)));
-		predators.insert(std::make_unique<Predator>(30, 20, olc::Pixel(255, 0, 0)));
+		// preys.insert(std::make_unique<Prey>(20, 20, olc::Pixel(255, 255, 0)));
+		// preys.insert(std::make_unique<Prey>(10, 5, olc::Pixel(0, 255, 0)));
+		// predators.insert(std::make_unique<Predator>(0, 20, olc::Pixel(255, 0, 0)));
+
+		poissonDiskSample();
 
 		myUI.addNewButton(UIStyle::UI_RED, olc::Key::Q, false, "EXIT", screen_width - 40, 0, 40, 20, "EXIT");
 		// myUI.addNewDropDown(UI_BLACK, UI_BLACK, screen_width - 15, 20, 15, "<", "FIRST,SECOND,EXIT", "CMD_1,CMD_2,EXIT");
@@ -252,6 +299,73 @@ protected:
 		return true;
 	}
 
+	olc::vi2d randVector(olc::vi2d base, float radius) {
+		std::uniform_real_distribution<> randRadius(radius, 2*radius);
+		std::uniform_real_distribution<> randAngle(0, 2*3.1415926);
+
+		float r = randRadius(generator);
+		float a = randAngle(generator);
+
+		return olc::vi2d(static_cast<int>(base.x + r * std::cos(a)), static_cast<int>(base.y + r * std::sin(a)));
+	}
+
+	void generatePredators() {
+		std::vector<olc::vi2d> points;
+		std::vector<olc::vi2d> active;
+
+		// the r/sqrt(2) grid for O(N) neighbor checking
+		SpacialHash grid(INTER_PRED_R);
+
+		std::uniform_int_distribution<> startX(0, screen_width);
+		std::uniform_int_distribution<> startY(0, screen_height);
+		olc::vi2d startPoint = olc::vi2d(startX(generator), startY(generator));
+		while(!walkable(startPoint)) {
+			startPoint = olc::vi2d(startX(generator), startY(generator));
+			std::cout << "here 1" << std::endl;
+		}
+
+		points.push_back(startPoint);
+		active.push_back(startPoint);
+		grid.insert(startPoint, 0);
+
+		while(!active.empty()) {
+			std::cout << "here 2" << std::endl;
+			std::cout << active.size() << std::endl;
+			std::uniform_int_distribution<> randIndex(0, active.size() - 1);
+			int index = randIndex(generator);
+			olc::vi2d basePt = active[index];
+			bool valid = false;
+
+			for(int i=0; i<TEST_POINTS; i++) {
+				olc::vi2d randVect = randVector(basePt, INTER_PRED_R);
+				if(!walkable(randVect) || !grid.farEnough(randVect, points, INTER_PRED_R)) continue;
+
+				points.push_back(randVect);
+				active.push_back(randVect);
+				grid.insert(randVect, points.size() - 1);
+
+				valid = true;
+				break;
+			}
+
+			if(!valid) {
+				active[index] = active.back();
+				active.pop_back();
+			}
+		}
+		std::cout << "here 3" << std::endl;
+
+		for(const auto& point: points) {
+			olc::vi2d newPredPos = point;
+			predators.insert(std::make_unique<Predator>(point, olc::Pixel(255, 0, 0)));
+		}
+		rebuildOccupancy();
+	}
+	
+	void poissonDiskSample() {
+		generatePredators();
+	}
+	
 	void fixedAvg(int i, int j, int v, float roughness, int (&offsets)[4][2])
 	{
 		float sum = 0.0f;
@@ -442,12 +556,6 @@ protected:
 			}
 		}
 		terrainDecal.reset(new olc::Decal(terrainSprite.get()));
-	}
-	
-	int distSquared(olc::vi2d from, olc::vi2d to) {
-		int dx = from.x - to.x;
-		int dy = from.y - to.y;
-		return dx * dx + dy * dy;
 	}
 	
 	olc::vi2d stepTowords(olc::vi2d from, olc::vi2d to, bool forPred=true) {
@@ -718,7 +826,7 @@ protected:
 				for(int j=x-RADIUS; j<=x+RADIUS; j++) {
 					int dx = j-x;
 					int dy = i-y;
-					if(dx*dx + dy*dy <= RADIUS*RADIUS) {
+					if(dx*dx + dy*dy <= RADIUS*RADIUS+3) {
 						auto cell = occupancy.find(olc::vi2d(j, i));
 						if(cell != occupancy.end()) {
 							Prey* prey = dynamic_cast<Prey*>(cell->second);
@@ -751,8 +859,13 @@ protected:
 					(*prey).die();
 				}
 			}
+			
 			occupancy.insert_or_assign(pred.getPos(), &pred);
+
+			if(pred.canReproduce()) {reproduce(pred.getPos(), pred.getColor(), true); pred.reproduced();}
 		}
+		predators.merge(newPredators);
+		newPredators.clear();
 	}
 
 	void updatePreys() {
