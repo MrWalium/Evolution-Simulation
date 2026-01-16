@@ -262,7 +262,8 @@ protected:
 	float const BEACH_LIM = 0.0;
 	float const MOUNT_LIM = 0.3;
 	float const SNOW_LIM = 0.5;
-	float const INTER_PRED_R = 10.0f;
+	float const INTER_PRED_R = 15.0f;
+	int const NUMBER_START_PTS = 5;
 	int FPS = 3;
 	// this is how many random vectors will be generated and tested for an active point before inactivated
 	const int TEST_POINTS = 10;
@@ -316,21 +317,22 @@ protected:
 		// the r/sqrt(2) grid for O(N) neighbor checking
 		SpacialHash grid(INTER_PRED_R);
 
+
 		std::uniform_int_distribution<> startX(0, screen_width);
 		std::uniform_int_distribution<> startY(0, screen_height);
-		olc::vi2d startPoint = olc::vi2d(startX(generator), startY(generator));
-		while(!walkable(startPoint)) {
-			startPoint = olc::vi2d(startX(generator), startY(generator));
-			std::cout << "here 1" << std::endl;
+		for(int i=0; i<NUMBER_START_PTS; i++) {
+			olc::vi2d startPoint = olc::vi2d(startX(generator), startY(generator));
+			while(!walkable(startPoint) || !grid.farEnough(startPoint, points, INTER_PRED_R)) {
+				startPoint = olc::vi2d(startX(generator), startY(generator));
+			}
+
+			points.push_back(startPoint);
+			active.push_back(startPoint);
+			grid.insert(startPoint, i);
 		}
 
-		points.push_back(startPoint);
-		active.push_back(startPoint);
-		grid.insert(startPoint, 0);
-
 		while(!active.empty()) {
-			std::cout << "here 2" << std::endl;
-			std::cout << active.size() << std::endl;
+			//std::cout << active.size() << std::endl;
 			std::uniform_int_distribution<> randIndex(0, active.size() - 1);
 			int index = randIndex(generator);
 			olc::vi2d basePt = active[index];
@@ -353,7 +355,6 @@ protected:
 				active.pop_back();
 			}
 		}
-		std::cout << "here 3" << std::endl;
 
 		for(const auto& point: points) {
 			olc::vi2d newPredPos = point;
@@ -1101,7 +1102,7 @@ protected:
 		// lets also draw all current commands to the screen
 		std::string myOut = myUI.getAllCmds();
 
-		limitFPS(true);
+		limitFPS(/*true*/);
 
 		return !GetKey(olc::Key::ESCAPE).bPressed;
 	}
