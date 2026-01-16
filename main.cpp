@@ -258,6 +258,7 @@ protected:
 	int screen_height = 0;
 	int terrainSize;
 	bool terrainDisplayed = false;
+	bool paused = true;
 
 	float const OCEAN_LIM = -0.2;
 	float const BEACH_LIM = 0.0;
@@ -1015,37 +1016,28 @@ protected:
 	{
 		// // tv.HandlePanAndZoom();
 
+		
+
+		if (GetKey(olc::Key::SPACE).bPressed) {
+			paused = !paused;
+		}
+
+		if(!paused) {
+			updatePreys();
+			updatePredators();
+		}
+
 		Clear(olc::BLACK);
 
 		displayTerrain();
 
-		if (GetKey(olc::Key::SPACE).bHeld) {
-			
-		}
-
-		if (GetMouse(0).bHeld)
-		{
-			// Do something if left click
-		}
-
-		if (GetMouse(1).bHeld)
-		{
-			
-		}
-
-		if (GetKey(olc::Key::C).bPressed)
-		{
-			// do something if C if pressed
-		}
-
-		updatePreys();
-		updatePredators();
-		
 		drawAnimals();
 		cleanCollections(true, true);
 		rebuildOccupancy();
 		
 		DrawStringDecal({2, 2}, "Active: " + std::to_string(preys.size()) + " / " + std::to_string(predators.size()));
+		if(paused) {DrawStringDecal({2, 15}, "paused ⏸");}
+		else {DrawStringDecal({2, 15}, "play ▶");}
 
 		// this handles the update of all items
 		myUI.Update(fElapsedTime);
