@@ -896,7 +896,7 @@ protected:
 							Prey* prey = dynamic_cast<Prey*>(cell->second);
 							if(prey && (*prey).isAlive()) {
 								int colorDifference = colorDiff((*prey).getColor(), terrainSprite->GetPixel((*prey).getX(), (*prey).getY()));
-								if(colorDifference > 50) {}
+								if(colorDifference > 50) {
 									listPreys.push_back(std::array<int, 3>{
 										(*prey).getX(), 
 										(*prey).getY(), 
