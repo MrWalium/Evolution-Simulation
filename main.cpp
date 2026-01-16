@@ -1014,12 +1014,15 @@ protected:
 	
 	bool OnUserUpdate(float fElapsedTime) override
 	{
-		// // tv.HandlePanAndZoom();
-
-		
+		tv.HandlePanAndZoom();
 
 		if (GetKey(olc::Key::SPACE).bPressed) {
 			paused = !paused;
+		}
+
+		if(GetKey(olc::Key::F).bPressed) {
+			tv.SetWorldScale({10.0f, 10.0f});
+			tv.SetWorldOffset({0.0f, 0.0f});
 		}
 
 		if(!paused) {
